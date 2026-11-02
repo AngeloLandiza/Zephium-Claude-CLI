@@ -377,7 +377,7 @@ fn row_entry(
                 number(row.get("context_window")).or_else(|| number(row.get("max_context_length")));
             (id.to_owned(), id.to_owned(), window, None, false, true)
         }
-        WorkModelProvider::Cloud => return None,
+        WorkModelProvider::Cloud | WorkModelProvider::ClaudeCli => return None,
     };
     if deprecated(provider, &model) || !valid_text(&model, 160) || !valid_text(&name, 96) {
         return None;

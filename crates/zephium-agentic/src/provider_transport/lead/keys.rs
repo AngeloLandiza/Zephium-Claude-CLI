@@ -25,7 +25,7 @@ pub fn service(provider: WorkModelProvider) -> Option<&'static str> {
         WorkModelProvider::Groq => "app.zephium.agent-provider.groq",
         WorkModelProvider::Cerebras => "app.zephium.agent-provider.cerebras",
         WorkModelProvider::Compatible => "app.zephium.agent-provider.compatible",
-        WorkModelProvider::Cloud => return None,
+        WorkModelProvider::Cloud | WorkModelProvider::ClaudeCli => return None,
     })
 }
 

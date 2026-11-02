@@ -30,6 +30,10 @@ pub enum WorkModelProvider {
     Compatible,
     /// Zephium Cloud: the upstream's native body, our base URL and bearer.
     Cloud,
+    /// Claude through the person's own Claude Code CLI, on whatever account
+    /// it is signed in to (a Claude subscription, say). Speaks the Anthropic
+    /// Messages events, streamed by the CLI.
+    ClaudeCli,
 }
 
 #[cfg_attr(feature = "ipc-types", derive(specta::Type))]

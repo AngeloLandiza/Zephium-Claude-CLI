@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use zephium_agentic::lead::{
-    self, keys, models, LeadClient, LeadCloudRecord, LeadCredential, LeadKeyCheck, LeadSecret,
-    LeadSecretFuture, LeadStaticCredential, LeadTarget,
+    self, keys, models, ClaudeCliClient, ClaudeCliStatus, LeadClient, LeadCloudRecord,
+    LeadCredential, LeadKeyCheck, LeadSecret, LeadSecretFuture, LeadStaticCredential, LeadTarget,
 };
 use zephium_core::ids::ProfileId;
 use zephium_core::work::model::*;
@@ -20,8 +20,9 @@ use WorkModelProvider as P;
 
 /// The order a role falls back to a provider when nothing is chosen: the
 /// person's own keys first, then the signed-in account's hosted models.
-const FALLBACK_ORDER: [WorkModelProvider; 11] = [
+const FALLBACK_ORDER: [WorkModelProvider; 12] = [
     P::Anthropic,
+    P::ClaudeCli,
     P::OpenAi,
     P::Google,
     P::XAi,
@@ -297,6 +298,59 @@ struct State {
     /// Choices kept in memory when no settings store is installed.
     choices: HashMap<String, StoredChoice>,
     efforts: HashMap<String, String>,
+    /// The person's own Claude Code CLI, once looked for.
+    claude_cli: Option<ClaudeCli>,
+}
+
+/// Where the Claude Code CLI is and whether it is signed in.
+#[derive(Clone, Debug, Default)]
+struct ClaudeCli {
+    program: Option<std::path::PathBuf>,
+    status: ClaudeCliStatus,
+}
+
+/// Looks for the CLI and asks it whether it is signed in. Runs only the fixed
+/// `claude auth status`; nothing the model says reaches this.
+async fn probe_claude_cli() -> ClaudeCli {
+    // Tests never look at the machine they run on.
+    #[cfg(test)]
+    {
+        tests::fake_claude_cli()
+    }
+    #[cfg(not(test))]
+    {
+        #[cfg(feature = "work-runtime")]
+        let program = blocking(|| {
+            use crate::work_connections::cli::{forget, locate, Cli};
+            forget();
+            locate(Cli::Claude)
+        })
+        .await
+        .flatten();
+        #[cfg(not(feature = "work-runtime"))]
+        let program: Option<std::path::PathBuf> = None;
+        let status = match &program {
+            Some(program) => lead::claude_cli_status(program).await.unwrap_or_default(),
+            None => ClaudeCliStatus::default(),
+        };
+        ClaudeCli { program, status }
+    }
+}
+
+/// Records a fresh look at the CLI; a sign-in that changed resets its verdict.
+fn store_claude_cli(found: ClaudeCli) {
+    let mut state = state();
+    let was = state.claude_cli.as_ref().map(|cli| cli.status.clone());
+    if was.as_ref() != Some(&found.status) {
+        *state.generations.entry(P::ClaudeCli).or_default() += 1;
+        state.verdicts.remove(&P::ClaudeCli);
+        state.faults.remove(&P::ClaudeCli);
+    }
+    state.presence.insert(
+        P::ClaudeCli,
+        found.program.is_some() && found.status.signed_in,
+    );
+    state.claude_cli = Some(found);
 }
 
 fn state() -> std::sync::MutexGuard<'static, State> {
@@ -327,8 +381,15 @@ pub(crate) async fn blocking<T: Send + 'static>(
     tokio::task::spawn_blocking(work).await.ok()
 }
 
-/// Reads which keys exist, from Keychain attributes only, once per process.
+/// Reads which keys exist, from Keychain attributes only, once per process;
+/// and looks once for the Claude Code CLI.
 pub(crate) async fn ensure_presence() {
+    if state().claude_cli.is_none() {
+        let found = probe_claude_cli().await;
+        if state().claude_cli.is_none() {
+            store_claude_cli(found);
+        }
+    }
     let missing: Vec<_> = {
         let mut state = state();
         load_cloud_cache(&mut state);
@@ -802,7 +863,7 @@ pub fn set_effort(
 /// Tracks the key's standing from real calls: a refusal marks it invalid,
 /// success marks it valid, so Settings and the picker stay truthful.
 struct Observed {
-    inner: LeadClient,
+    inner: Box<dyn WorkModelClient>,
     provider: WorkModelProvider,
     generation: u64,
 }
@@ -815,7 +876,7 @@ impl WorkModelClient for Observed {
     ) -> WorkModelFuture<'a> {
         Box::pin(async move {
             let result = self.inner.call(request, events).await;
-            if KEYED_PROVIDERS.contains(&self.provider)
+            if (KEYED_PROVIDERS.contains(&self.provider) || self.provider == P::ClaudeCli)
                 && generation(self.provider) == self.generation
             {
                 match &result {
@@ -990,7 +1051,22 @@ fn client_for(
             }
             client = client.with_call_limits(hosted.idle_timeout_ms, hosted.max_duration_ms);
             return Ok(Arc::new(Observed {
-                inner: client,
+                inner: Box::new(client),
+                provider,
+                generation: state.generations.get(&provider).copied().unwrap_or(0),
+            }));
+        }
+        P::ClaudeCli => {
+            let program = state
+                .claude_cli
+                .as_ref()
+                .and_then(|cli| cli.program.clone())
+                .ok_or(WorkModelError::MissingKey)?;
+            if entry.model.wire != WorkModelWire::AnthropicMessages {
+                return Err(WorkModelError::BadRequest);
+            }
+            return Ok(Arc::new(Observed {
+                inner: Box::new(ClaudeCliClient::new(program)),
                 provider,
                 generation: state.generations.get(&provider).copied().unwrap_or(0),
             }));
@@ -1013,7 +1089,7 @@ fn client_for(
         return Err(WorkModelError::BadRequest);
     }
     Ok(Arc::new(Observed {
-        inner: LeadClient::new(target, credential, entry.price.clone()),
+        inner: Box::new(LeadClient::new(target, credential, entry.price.clone())),
         provider,
         generation: state.generations.get(&provider).copied().unwrap_or(0),
     }))
@@ -1058,6 +1134,10 @@ pub struct WorkProviderView {
     pub fault: Option<WorkKeyFault>,
     /// The configured base URL, for the OpenAI-compatible endpoint only.
     pub base: Option<String>,
+    /// The signed-in account, for the Claude Code CLI only.
+    pub account: Option<String>,
+    /// Whether the Claude Code CLI was found; `None` for other providers.
+    pub installed: Option<bool>,
 }
 
 /// Everything the picker and Settings → AI render.
@@ -1104,11 +1184,21 @@ pub async fn view(profile: ProfileId) -> WorkModelsView {
         .collect();
     let providers = KEYED_PROVIDERS
         .into_iter()
+        .chain([P::ClaudeCli])
         .map(|provider| WorkProviderView {
             provider,
             key: key_status(&state, provider),
             fault: state.faults.get(&provider).copied(),
             base: (provider == P::Compatible).then(compatible_base).flatten(),
+            account: (provider == P::ClaudeCli)
+                .then(|| state.claude_cli.as_ref()?.status.account.clone())
+                .flatten(),
+            installed: (provider == P::ClaudeCli).then(|| {
+                state
+                    .claude_cli
+                    .as_ref()
+                    .is_some_and(|cli| cli.program.is_some())
+            }),
         })
         .collect();
     WorkModelsView {
@@ -1264,6 +1354,12 @@ pub async fn set_key(provider: P, secret: String) -> Result<WorkKeyStatus, WorkM
 }
 
 pub async fn test_key(provider: P) -> Result<WorkKeyStatus, WorkModelError> {
+    if provider == P::ClaudeCli {
+        // Looks again: the person may have installed or signed in meanwhile.
+        store_claude_cli(probe_claude_cli().await);
+        notify();
+        return Ok(key_status(&state(), provider));
+    }
     let _guard = mutations().lock().await;
     let secret = match blocking(move || vault().load(provider)).await {
         Some(Ok(secret)) => secret,
@@ -1418,6 +1514,9 @@ pub async fn set_compatible_base(base: Option<&str>) -> Result<(), WorkModelErro
 pub async fn more_models(
     provider: WorkModelProvider,
 ) -> Result<Vec<WorkModelEntry>, WorkModelError> {
+    if provider == P::ClaudeCli {
+        return Ok(Vec::new());
+    }
     let _guard = mutations().lock().await;
     let current_generation = generation(provider);
     if let Some(listed) = state().listed.get(&provider) {
@@ -1614,6 +1713,74 @@ mod tests {
         }
     }
 
+    static FAKE_CLAUDE_CLI: Mutex<Option<ClaudeCli>> = Mutex::new(None);
+
+    pub(super) fn fake_claude_cli() -> ClaudeCli {
+        FAKE_CLAUDE_CLI.lock().unwrap().clone().unwrap_or_default()
+    }
+
+    fn with_claude_cli(installed: bool, signed_in: bool) {
+        *FAKE_CLAUDE_CLI.lock().unwrap() = Some(ClaudeCli {
+            program: installed.then(|| std::path::PathBuf::from("/usr/local/bin/claude")),
+            status: ClaudeCliStatus {
+                signed_in,
+                account: signed_in.then(|| "angelo@example.com".to_owned()),
+            },
+        });
+    }
+
+    #[tokio::test]
+    async fn a_signed_in_claude_cli_runs_the_lead_on_its_plan() {
+        let _serial = STATE_SERIAL.lock().await;
+        install_settings(Arc::new(Memory(Mutex::new(HashMap::new()))));
+        let profile = ProfileId::from(7_001_u128);
+
+        with_claude_cli(true, false);
+        with_keys(&[]);
+        assert!(!ready(profile).await);
+        let row = view(profile)
+            .await
+            .providers
+            .into_iter()
+            .find(|row| row.provider == P::ClaudeCli)
+            .unwrap();
+        assert_eq!(row.key, WorkKeyStatus::Missing);
+        assert_eq!(row.installed, Some(true));
+
+        with_claude_cli(true, true);
+        assert_eq!(test_key(P::ClaudeCli).await, Ok(WorkKeyStatus::Set));
+        assert!(ready(profile).await);
+        let lead = effective(&state(), profile, WorkModelRole::Lead).unwrap();
+        assert_eq!(lead.id, "claude-cli/claude-opus-5-5");
+        assert_eq!(lead.price.as_ref().map(|price| price.output), Some(0));
+        let light = effective(&state(), profile, WorkModelRole::Light).unwrap();
+        assert_eq!(light.id, "claude-cli/claude-haiku-5-5");
+        let row = view(profile)
+            .await
+            .providers
+            .into_iter()
+            .find(|row| row.provider == P::ClaudeCli)
+            .unwrap();
+        assert_eq!(row.account.as_deref(), Some("angelo@example.com"));
+        assert!(client(&state(), &lead).is_ok());
+        assert_eq!(
+            set_key(P::ClaudeCli, "sk-nope".into()).await,
+            Err(WorkModelError::BadRequest)
+        );
+
+        // An Anthropic key the person added still comes first.
+        with_keys(&[P::Anthropic]);
+        let lead = effective(&state(), profile, WorkModelRole::Lead).unwrap();
+        assert_eq!(lead.model.provider, P::Anthropic);
+
+        with_claude_cli(false, false);
+        assert_eq!(test_key(P::ClaudeCli).await, Ok(WorkKeyStatus::Missing));
+        *FAKE_CLAUDE_CLI.lock().unwrap() = None;
+    }
+
+    /// The model state is process-wide: tests that change it take turns.
+    static STATE_SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     fn with_keys(present: &[WorkModelProvider]) {
         let mut state = state();
         *state = State::default();
@@ -1624,6 +1791,7 @@ mod tests {
 
     #[tokio::test]
     async fn defaults_choices_failures_and_stale_results_stay_truthful() {
+        let _serial = STATE_SERIAL.lock().await;
         install_settings(Arc::new(Memory(Mutex::new(HashMap::new()))));
         set_compatible_base(Some("https://old-provider.example/v1"))
             .await

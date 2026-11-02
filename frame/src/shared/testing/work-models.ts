@@ -19,6 +19,7 @@ const WIRE = {
   cerebras: "chat_completions",
   compatible: "chat_completions",
   cloud: "anthropic_messages",
+  claude_cli: "anthropic_messages",
 } as const;
 
 const SLUG = {
@@ -33,6 +34,7 @@ const SLUG = {
   cerebras: "cerebras",
   compatible: "compatible",
   cloud: "zephium",
+  claude_cli: "claude-cli",
 } as const;
 
 export function entry(
@@ -142,7 +144,15 @@ export function models(options: {
   lead?: string | null;
   chosen?: string | null;
   effort?: WorkModelReasoning;
+  /** The person's own Claude Code CLI, as Settings lists it. */
+  claudeCli?: { installed: boolean; key?: WorkKeyStateV1; account?: string };
 }): WorkModelsV1 {
+  const plan = options.claudeCli
+    ? [
+        entry("claude_cli", "claude-opus-5-5", "Claude Opus 5.5", true, ["lead"]),
+        entry("claude_cli", "claude-haiku-5-5", "Claude Haiku 5.5", true, ["page", "light"]),
+      ]
+    : [];
   const cloud = options.cloud
     ? [entry("cloud", "claude-sonnet-5-5", "Claude Sonnet 5.5", true, ["lead", "page"])]
     : [];
@@ -153,7 +163,7 @@ export function models(options: {
   return {
     version: 1,
     profile: PROFILE,
-    entries: [...cloud, ...builtin],
+    entries: [...cloud, ...builtin, ...plan],
     chosen: { lead: options.chosen ?? null, page: null, light: null },
     effective: { lead: options.lead ?? null, page: null, light: null },
     providers: (
@@ -169,11 +179,25 @@ export function models(options: {
         "open_router",
         "compatible",
       ] as const
-    ).map((provider) => ({
-      provider,
-      key: options.keys?.[provider] ?? "missing",
-      base: provider === "compatible" ? (options.base ?? null) : null,
-    })),
+    )
+      .map((provider): WorkModelsV1["providers"][number] => ({
+        provider,
+        key: options.keys?.[provider] ?? "missing",
+        base: provider === "compatible" ? (options.base ?? null) : null,
+      }))
+      .concat(
+        options.claudeCli
+          ? [
+              {
+                provider: "claude_cli",
+                key: options.claudeCli.key ?? "missing",
+                base: null,
+                account: options.claudeCli.account ?? null,
+                installed: options.claudeCli.installed,
+              },
+            ]
+          : [],
+      ),
     cloud: {
       signed_in: !!options.cloud,
       plan: options.cloud ? "Pro" : null,

@@ -7,6 +7,7 @@
 
 mod anthropic;
 mod chat;
+mod claude_cli;
 mod cloud;
 mod gemini;
 pub(super) mod image_fence;
@@ -30,6 +31,9 @@ use serde_json::Value;
 use zephium_core::work::model::*;
 use zeroize::Zeroizing;
 
+pub use claude_cli::{
+    claude_cli_status, parse_status as parse_claude_cli_status, ClaudeCliClient, ClaudeCliStatus,
+};
 use cloud::classify_cloud;
 pub use cloud::{LeadCloudAccounting, LeadCloudObserver, LeadCloudRecord};
 pub use listing::{
@@ -159,9 +163,9 @@ impl LeadTarget {
             WorkModelProvider::Mistral => (WorkModelWire::ChatCompletions, MISTRAL_BASE),
             WorkModelProvider::Groq => (WorkModelWire::ChatCompletions, GROQ_BASE),
             WorkModelProvider::Cerebras => (WorkModelWire::ChatCompletions, CEREBRAS_BASE),
-            WorkModelProvider::Compatible | WorkModelProvider::Cloud => {
-                return Err(WorkModelError::BadRequest)
-            }
+            WorkModelProvider::Compatible
+            | WorkModelProvider::Cloud
+            | WorkModelProvider::ClaudeCli => return Err(WorkModelError::BadRequest),
         };
         Ok(Self {
             wire,
@@ -201,7 +205,8 @@ impl LeadTarget {
             | WorkModelProvider::Groq
             | WorkModelProvider::Cerebras
             | WorkModelProvider::Compatible
-            | WorkModelProvider::Cloud => return Err(WorkModelError::BadRequest),
+            | WorkModelProvider::Cloud
+            | WorkModelProvider::ClaudeCli => return Err(WorkModelError::BadRequest),
         };
         Ok(Self {
             wire,

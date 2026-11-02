@@ -5780,7 +5780,13 @@ export type WorkModelProvider = "open_ai" | "anthropic" | "google" | "deep_seek"
 /**  Any OpenAI-compatible chat endpoint the person configured. */
 "compatible" |
 /**  Zephium Cloud: the upstream's native body, our base URL and bearer. */
-"cloud";
+"cloud" |
+/**
+ *  Claude through the person's own Claude Code CLI, on whatever account
+ *  it is signed in to (a Claude subscription, say). Speaks the Anthropic
+ *  Messages events, streamed by the CLI.
+ */
+"claude_cli";
 
 export type WorkModelReasoning = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -6714,6 +6720,10 @@ export type WorkProviderStatusV1_Deserialize = {
 	fault?: WorkModelsFaultV1 | null,
 	/**  The OpenAI-compatible endpoint's base URL. */
 	base: string | null,
+	/**  The Claude Code CLI's signed-in account, when it says one. */
+	account?: string | null,
+	/**  Whether the Claude Code CLI was found; absent for other providers. */
+	installed?: boolean | null,
 };
 
 export type WorkProviderStatusV1_Serialize = {
@@ -6722,6 +6732,10 @@ export type WorkProviderStatusV1_Serialize = {
 	fault?: WorkModelsFaultV1 | null,
 	/**  The OpenAI-compatible endpoint's base URL. */
 	base: string | null,
+	/**  The Claude Code CLI's signed-in account, when it says one. */
+	account?: string | null,
+	/**  Whether the Claude Code CLI was found; absent for other providers. */
+	installed?: boolean | null,
 };
 
 export type WorkPublicDiscoveryScope = {

@@ -46,6 +46,12 @@ pub(crate) struct WorkProviderStatusV1 {
     pub(crate) fault: Option<WorkModelsFaultV1>,
     /// The OpenAI-compatible endpoint's base URL.
     pub(crate) base: Option<String>,
+    /// The Claude Code CLI's signed-in account, when it says one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) account: Option<String>,
+    /// Whether the Claude Code CLI was found; absent for other providers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) installed: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, specta::Type)]
@@ -229,6 +235,8 @@ mod product {
                     key: key(provider.key),
                     fault: provider.fault.map(provider_fault),
                     base: provider.base,
+                    account: provider.account,
+                    installed: provider.installed,
                 })
                 .collect(),
             cloud: WorkCloudStatusV1 {

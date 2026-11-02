@@ -15,6 +15,7 @@
   import Select from "$shared/ui/Select";
   import SettingsGroup from "$shared/ui/SettingsGroup";
   import SettingsRow from "$shared/ui/SettingsRow";
+  import AiClaudePlanRow from "../AiClaudePlanRow.svelte";
   import AiProviderRow from "../AiProviderRow.svelte";
   import AiVoiceRow from "../AiVoiceRow.svelte";
   import AiZephiumRow from "../AiZephiumRow.svelte";
@@ -52,7 +53,9 @@
   ];
   const anyUsable = $derived(
     !!models &&
-      (usable(models, "cloud") || keyedProviders.some((provider) => usable(models, provider))),
+      (usable(models, "cloud") ||
+        usable(models, "claude_cli") ||
+        keyedProviders.some((provider) => usable(models, provider))),
   );
 
   function label(entry: WorkModelEntry) {
@@ -98,6 +101,8 @@
   {#if !anyUsable}<p class="ai-note">{m.ai_byok_start()}</p>{/if}
 
   <AiZephiumRow />
+
+  {#if session}<AiClaudePlanRow {session} />{/if}
 
   <SettingsGroup title={m.ai_keys_group()} description={m.ai_keys_note()}>
     {#if session}{#each keyedProviders as provider (provider)}<AiProviderRow

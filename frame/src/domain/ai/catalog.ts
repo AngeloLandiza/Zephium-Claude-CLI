@@ -33,6 +33,7 @@ const names: Record<WorkModelProvider, string> = {
   cerebras: "Cerebras",
   compatible: "Custom",
   cloud: "Zephium",
+  claude_cli: "Claude plan",
 };
 
 export function providerName(provider: WorkModelProvider): string {
@@ -88,7 +89,7 @@ export function pickerGroups(
   endpoint: readonly WorkModelEntry[] = [],
 ) {
   const entries = [...(models?.entries ?? []), ...endpoint];
-  const order: readonly WorkModelProvider[] = ["cloud", ...keyedProviders];
+  const order: readonly WorkModelProvider[] = ["cloud", "claude_cli", ...keyedProviders];
   const ready: ModelGroup[] = [];
   const needsKey: WorkModelProvider[] = [];
   for (const provider of order) {

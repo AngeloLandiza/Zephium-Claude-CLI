@@ -3874,5 +3874,16 @@
   "privacy_windows_diagnostics_failed": "Could not open Windows Settings. Open Windows Settings and search for Diagnostics & feedback.",
   "privacy_microsoft_statement": "Microsoft privacy statement",
   "privacy_microsoft_statement_help": "Read how Microsoft handles SmartScreen and WebView2 data.",
-  "privacy_microsoft_statement_open": "Read privacy statement"
+  "privacy_microsoft_statement_open": "Read privacy statement",
+  "ai_claude_plan_group": "Your Claude plan",
+  "ai_claude_plan_note": "Run Work on the Claude Pro or Max plan your Claude Code is signed in to. Zephium runs every tool itself; Claude Code runs none.",
+  "ai_claude_plan_title": "Claude Code",
+  "ai_claude_plan_signed_in": "Signed in",
+  "ai_claude_plan_signed_in_as": "Signed in as {account}",
+  "ai_claude_plan_signed_out": "Not signed in. Run claude in a terminal, sign in, then check again.",
+  "ai_claude_plan_missing": "Not installed. Install Claude Code and sign in to use your plan.",
+  "ai_claude_plan_refused": "Claude Code turned the last request away. Check that it is still signed in.",
+  "ai_claude_plan_check": "Check again",
+  "ai_claude_plan_install": "Install Claude Code",
+  "ai_claude_plan_check_failed": "Couldn’t reach Claude Code. Try again."
 }

@@ -64,6 +64,7 @@ pub(crate) fn provider_name(provider: WorkModelProvider) -> &'static str {
         WorkModelProvider::Cerebras => "Cerebras",
         WorkModelProvider::Compatible => "your server",
         WorkModelProvider::Cloud => "Zephium",
+        WorkModelProvider::ClaudeCli => "your Claude plan",
     }
 }
 

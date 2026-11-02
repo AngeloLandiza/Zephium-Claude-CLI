@@ -86,6 +86,56 @@ const SPECS: &[Spec] = &[
         search: true,
         price: (10.0, 0.25, 50.0),
     },
+    // Claude through the person's own Claude Code CLI: the plan pays, so no
+    // per-token price; the CLI runs no search of its own here.
+    Spec {
+        provider: P::ClaudeCli,
+        model: "claude-opus-5-5",
+        name: "Claude Opus 5.5",
+        roles: &[R::Lead],
+        recommended: true,
+        context: 1_000_000,
+        output: 128_000,
+        vision: true,
+        search: false,
+        price: (0.0, 0.0, 0.0),
+    },
+    Spec {
+        provider: P::ClaudeCli,
+        model: "claude-sonnet-5-5",
+        name: "Claude Sonnet 5.5",
+        roles: &[R::Lead, R::Page],
+        recommended: true,
+        context: 1_000_000,
+        output: 128_000,
+        vision: true,
+        search: false,
+        price: (0.0, 0.0, 0.0),
+    },
+    Spec {
+        provider: P::ClaudeCli,
+        model: "claude-haiku-5-5",
+        name: "Claude Haiku 5.5",
+        roles: &[R::Page, R::Light],
+        recommended: true,
+        context: 1_000_000,
+        output: 64_000,
+        vision: true,
+        search: false,
+        price: (0.0, 0.0, 0.0),
+    },
+    Spec {
+        provider: P::ClaudeCli,
+        model: "claude-fable-5-1",
+        name: "Claude Fable 5.1",
+        roles: &[R::Lead],
+        recommended: false,
+        context: 1_000_000,
+        output: 128_000,
+        vision: true,
+        search: false,
+        price: (0.0, 0.0, 0.0),
+    },
     // https://developers.openai.com/api/docs/models/gpt-5.6-terra
     Spec {
         provider: P::OpenAi,
@@ -403,7 +453,7 @@ const SPECS: &[Spec] = &[
 pub fn wire(provider: WorkModelProvider) -> WorkModelWire {
     match provider {
         P::OpenAi => WorkModelWire::OpenAiResponses,
-        P::Anthropic => WorkModelWire::AnthropicMessages,
+        P::Anthropic | P::ClaudeCli => WorkModelWire::AnthropicMessages,
         P::Google => WorkModelWire::Gemini,
         P::XAi => WorkModelWire::OpenAiResponses,
         P::DeepSeek
@@ -435,6 +485,7 @@ pub fn provider_slug(provider: WorkModelProvider) -> &'static str {
         P::Cerebras => "cerebras",
         P::Compatible => "compatible",
         P::Cloud => "zephium",
+        P::ClaudeCli => "claude-cli",
     }
 }
 
@@ -452,6 +503,7 @@ pub fn provider_from_slug(slug: &str) -> Option<WorkModelProvider> {
         "cerebras" => P::Cerebras,
         "compatible" => P::Compatible,
         "zephium" => P::Cloud,
+        "claude-cli" => P::ClaudeCli,
         _ => return None,
     })
 }
@@ -501,6 +553,8 @@ pub fn family_default(provider: WorkModelProvider, role: WorkModelRole) -> Optio
     Some(match (provider, role) {
         (P::Anthropic, R::Lead) => "claude-opus-5-5",
         (P::Anthropic, R::Page | R::Light) => "claude-haiku-4-5-20251001",
+        (P::ClaudeCli, R::Lead) => "claude-opus-5-5",
+        (P::ClaudeCli, R::Page | R::Light) => "claude-haiku-5-5",
         (P::OpenAi, R::Lead | R::Page | R::Light) => "gpt-6-luna",
         (P::Google, R::Lead) => "gemini-3.1-pro-preview",
         (P::Google, R::Page) => "gemini-3.8-flash",
@@ -538,6 +592,8 @@ pub fn efforts(upstream: WorkModelProvider, model: &str) -> Vec<WorkModelReasoni
             vec![Low, Medium, High, Max]
         }
         P::Anthropic => vec![Low, Medium, High, XHigh, Max],
+        // The CLI's own `--effort` levels.
+        P::ClaudeCli => vec![Low, Medium, High, XHigh, Max],
         P::Google if model.starts_with("gemini-3-pro") => vec![Low, High],
         P::Google => vec![Low, Medium, High],
         P::XAi => match model

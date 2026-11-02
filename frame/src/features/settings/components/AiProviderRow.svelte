@@ -45,6 +45,7 @@
       cerebras: m.ai_provider_cerebras,
       compatible: m.ai_provider_compatible,
       cloud: m.ai_provider_compatible,
+      claude_cli: m.ai_provider_anthropic,
     }[provider](),
   );
 
